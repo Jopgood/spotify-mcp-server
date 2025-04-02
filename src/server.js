@@ -5,6 +5,8 @@ import session from 'express-session';
 import SpotifyWebApi from 'spotify-web-api-node';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import fs from 'fs/promises';
+import aiWebhook from './ai-webhook.js';
 
 // Load environment variables
 dotenv.config();
@@ -16,6 +18,7 @@ const PORT = process.env.PORT || 8888;
 // Get the directory path
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const TOKEN_STORAGE_PATH = join(__dirname, '../.token-storage.json');
 
 // Middleware
 app.use(cors());
@@ -40,6 +43,36 @@ const spotifyApi = new SpotifyWebApi({
 app.get('/', (req, res) => {
   res.sendFile(join(__dirname, '../public/index.html'));
 });
+
+// Token storage functions
+async function saveTokenToStorage(tokenData) {
+  try {
+    await fs.writeFile(
+      TOKEN_STORAGE_PATH, 
+      JSON.stringify(tokenData), 
+      'utf8'
+    );
+    
+    // Also update environment variables for the AI webhook
+    process.env.SPOTIFY_ACCESS_TOKEN = tokenData.access_token;
+    process.env.SPOTIFY_REFRESH_TOKEN = tokenData.refresh_token;
+    process.env.SPOTIFY_TOKEN_EXPIRES_AT = tokenData.expires_at.toString();
+    
+    console.log('Token saved to storage');
+  } catch (error) {
+    console.error('Error saving token to storage:', error);
+  }
+}
+
+async function loadTokenFromStorage() {
+  try {
+    const data = await fs.readFile(TOKEN_STORAGE_PATH, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    console.error('Error loading token from storage:', error);
+    return null;
+  }
+}
 
 // Spotify authorization
 app.get('/login', (req, res) => {
@@ -72,6 +105,13 @@ app.get('/callback', async (req, res) => {
     req.session.refresh_token = refresh_token;
     req.session.expires_at = Date.now() + expires_in * 1000;
     
+    // Save tokens to storage for the AI webhook
+    await saveTokenToStorage({
+      access_token,
+      refresh_token,
+      expires_at: Date.now() + expires_in * 1000
+    });
+    
     res.redirect('/');
   } catch (error) {
     console.error('Error getting tokens:', error);
@@ -100,6 +140,13 @@ const ensureAuthenticated = async (req, res, next) => {
       // Update session
       req.session.access_token = access_token;
       req.session.expires_at = Date.now() + expires_in * 1000;
+      
+      // Update storage
+      await saveTokenToStorage({
+        access_token,
+        refresh_token: req.session.refresh_token,
+        expires_at: Date.now() + expires_in * 1000
+      });
     } catch (error) {
       console.error('Error refreshing token:', error);
       return res.status(401).json({ error: 'Failed to refresh token' });
@@ -233,8 +280,29 @@ app.get('/api/search', ensureAuthenticated, async (req, res) => {
   }
 });
 
+// Mount AI webhook router
+app.use('/ai', aiWebhook);
+
+// Load saved token on startup
+(async () => {
+  try {
+    const savedToken = await loadTokenFromStorage();
+    if (savedToken) {
+      console.log('Loaded saved token from storage');
+      
+      // Set environment variables for the AI webhook
+      process.env.SPOTIFY_ACCESS_TOKEN = savedToken.access_token;
+      process.env.SPOTIFY_REFRESH_TOKEN = savedToken.refresh_token;
+      process.env.SPOTIFY_TOKEN_EXPIRES_AT = savedToken.expires_at.toString();
+    }
+  } catch (error) {
+    console.error('Error loading saved token:', error);
+  }
+})();
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Spotify MCP Server is running on port ${PORT}`);
   console.log(`Visit http://localhost:${PORT} to get started`);
+  console.log(`AI webhook available at http://localhost:${PORT}/ai/command`);
 });
