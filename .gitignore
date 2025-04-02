@@ -1,3 +1,6 @@
+# Token data
+.token-storage.json
+
 # Dependency directories
 node_modules/
 jspm_packages/
