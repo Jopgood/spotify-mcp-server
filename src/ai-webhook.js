@@ -2,6 +2,11 @@
 import express from 'express';
 import SpotifyWebApi from 'spotify-web-api-node';
 import dotenv from 'dotenv';
+import {
+  loadTokenFromStorage,
+  saveTokenToStorage,
+  isTokenExpired
+} from './token-manager.js';
 
 dotenv.config();
 
@@ -11,9 +16,6 @@ const spotifyApi = new SpotifyWebApi({
   clientSecret: process.env.CLIENT_SECRET,
   redirectUri: process.env.REDIRECT_URI
 });
-
-// Load the access token when the server starts
-let tokenExpirationTime = 0;
 
 // Setup the router
 const router = express.Router();
@@ -32,76 +34,50 @@ const verifyApiKey = (req, res, next) => {
 // Middleware to ensure the Spotify API has a valid token
 const ensureToken = async (req, res, next) => {
   try {
-    // Check if we need to refresh the token
-    if (Date.now() > tokenExpirationTime) {
-      // Load token from storage (this would need to be implemented)
-      const tokenData = await loadTokenFromStorage();
-      
-      if (!tokenData) {
-        return res.status(401).json({ 
-          error: 'Not authenticated with Spotify',
-          message: 'Please open the web interface and authenticate with Spotify first' 
-        });
-      }
-      
-      spotifyApi.setAccessToken(tokenData.accessToken);
-      spotifyApi.setRefreshToken(tokenData.refreshToken);
-      
-      if (Date.now() > tokenData.expiresAt) {
-        // Refresh the token
+    // Load token from storage
+    const tokenData = await loadTokenFromStorage();
+    
+    if (!tokenData || !tokenData.access_token) {
+      return res.status(401).json({ 
+        error: 'Not authenticated with Spotify',
+        message: 'Please open the web interface and authenticate with Spotify first' 
+      });
+    }
+    
+    // Set tokens
+    spotifyApi.setAccessToken(tokenData.access_token);
+    spotifyApi.setRefreshToken(tokenData.refresh_token);
+    
+    // Check if token needs refreshing
+    if (isTokenExpired(tokenData)) {
+      try {
+        console.log('AI webhook: Token expired, refreshing...');
         const data = await spotifyApi.refreshAccessToken();
         spotifyApi.setAccessToken(data.body.access_token);
         
-        // Update expiration time
-        tokenExpirationTime = Date.now() + (data.body.expires_in * 1000);
-        
-        // Save new token (this would need to be implemented)
+        // Save the refreshed token
         await saveTokenToStorage({
-          accessToken: data.body.access_token,
-          refreshToken: tokenData.refreshToken,
-          expiresAt: tokenExpirationTime
+          access_token: data.body.access_token,
+          refresh_token: tokenData.refresh_token,
+          expires_at: Date.now() + (data.body.expires_in * 1000)
         });
-      } else {
-        tokenExpirationTime = tokenData.expiresAt;
+        
+        console.log('AI webhook: Token refreshed successfully');
+      } catch (refreshError) {
+        console.error('AI webhook: Error refreshing token:', refreshError);
+        return res.status(401).json({ 
+          error: 'Failed to refresh Spotify token', 
+          message: 'Please re-authenticate with Spotify'
+        });
       }
     }
     
     next();
   } catch (error) {
-    console.error('Error ensuring token:', error);
+    console.error('AI webhook: Error ensuring token:', error);
     res.status(500).json({ error: 'Failed to authorize with Spotify' });
   }
 };
-
-// Helper function to load token from storage (placeholder)
-async function loadTokenFromStorage() {
-  // This would be replaced with actual storage (e.g., database, file)
-  // For now, we'll look for a session file or something similar
-  
-  try {
-    // This is a placeholder - you would implement actual token storage
-    return {
-      accessToken: process.env.SPOTIFY_ACCESS_TOKEN,
-      refreshToken: process.env.SPOTIFY_REFRESH_TOKEN,
-      expiresAt: parseInt(process.env.SPOTIFY_TOKEN_EXPIRES_AT || '0')
-    };
-  } catch (error) {
-    console.error('Error loading token:', error);
-    return null;
-  }
-}
-
-// Helper function to save token to storage (placeholder)
-async function saveTokenToStorage(tokenData) {
-  // This would be replaced with actual storage (e.g., database, file)
-  // This is just a placeholder
-  console.log('Token would be saved:', tokenData);
-  
-  // Update environment variables (this won't persist across restarts)
-  process.env.SPOTIFY_ACCESS_TOKEN = tokenData.accessToken;
-  process.env.SPOTIFY_REFRESH_TOKEN = tokenData.refreshToken;
-  process.env.SPOTIFY_TOKEN_EXPIRES_AT = tokenData.expiresAt.toString();
-}
 
 // Natural language command parser
 function parseCommand(command) {
@@ -247,25 +223,39 @@ router.post('/command', verifyApiKey, ensureToken, async (req, res) => {
       }
       
       case 'status': {
-        const state = await spotifyApi.getMyCurrentPlaybackState();
-        
-        if (state.body && state.body.item) {
-          const { item } = state.body;
-          const artists = item.artists.map(artist => artist.name).join(', ');
-          result = {
-            success: true,
-            message: `Currently playing "${item.name}" by ${artists}`,
-            details: {
-              track: item.name,
-              artists,
-              album: item.album.name,
-              isPlaying: state.body.is_playing,
-              volume: state.body.device.volume_percent,
-              device: state.body.device.name
-            }
-          };
-        } else {
-          result = { success: true, message: 'Not currently playing anything' };
+        try {
+          const state = await spotifyApi.getMyCurrentPlaybackState();
+          
+          if (state.body && state.body.item) {
+            const { item } = state.body;
+            const artists = item.artists.map(artist => artist.name).join(', ');
+            result = {
+              success: true,
+              message: `Currently playing "${item.name}" by ${artists}`,
+              details: {
+                track: item.name,
+                artists,
+                album: item.album.name,
+                isPlaying: state.body.is_playing,
+                volume: state.body.device.volume_percent,
+                device: state.body.device.name
+              }
+            };
+          } else {
+            result = { success: true, message: 'Not currently playing anything' };
+          }
+        } catch (statusError) {
+          console.error('Error getting playback state:', statusError);
+          
+          // Check if the error is because no active device was found
+          if (statusError.message && statusError.message.includes('NO_ACTIVE_DEVICE')) {
+            result = { 
+              success: true, 
+              message: 'No active Spotify device found. Please start playing on a device first.'
+            };
+          } else {
+            throw statusError; // Re-throw to be caught by the outer catch
+          }
         }
         break;
       }
@@ -281,8 +271,22 @@ router.post('/command', verifyApiKey, ensureToken, async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error processing command:', error);
+    
+    // Try to determine if it's a common Spotify API error
+    let errorMessage = 'Failed to process command';
+    
+    if (error.message) {
+      if (error.message.includes('NO_ACTIVE_DEVICE')) {
+        errorMessage = 'No active Spotify device found. Please start playing on a device first.';
+      } else if (error.message.includes('PREMIUM_REQUIRED')) {
+        errorMessage = 'This feature requires a Spotify Premium account.';
+      } else if (error.message.includes('NOT_FOUND')) {
+        errorMessage = 'The requested resource was not found on Spotify.';
+      }
+    }
+    
     res.status(500).json({ 
-      error: 'Failed to process command', 
+      error: errorMessage, 
       details: error.message 
     });
   }
