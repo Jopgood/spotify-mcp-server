@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Spotify Voice Control</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #121212;
+      color: #ffffff;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+    
+    .container {
+      max-width: 800px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    
+    h1 {
+      color: #1DB954; /* Spotify green */
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    .voice-control {
+      background-color: #282828;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    
+    .mic-button {
+      background-color: #1DB954;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 80px;
+      height: 80px;
+      font-size: 24px;
+      cursor: pointer;
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+    }
+    
+    .mic-button:hover {
+      background-color: #1ed760;
+      transform: scale(1.05);
+    }
+    
+    .mic-button:active {
+      transform: scale(0.95);
+    }
+    
+    .mic-button.listening {
+      animation: pulse 1.5s infinite;
+      background-color: #ff5252;
+    }
+    
+    @keyframes pulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.7);
+      }
+      70% {
+        box-shadow: 0 0 0 15px rgba(255, 82, 82, 0);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(255, 82, 82, 0);
+      }
+    }
+    
+    .status {
+      text-align: center;
+      margin-bottom: 20px;
+      min-height: 24px;
+      font-size: 18px;
+    }
+    
+    .transcript {
+      background-color: #3E3E3E;
+      border-radius: 5px;
+      padding: 15px;
+      margin-bottom: 20px;
+      min-height: 50px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    
+    #transcriptText {
+      margin: 0;
+      word-wrap: break-word;
+    }
+    
+    .log-container {
+      background-color: #282828;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      width: 100%;
+      box-sizing: border-box;
+    }
+    
+    .log-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    
+    .clear-log {
+      background-color: transparent;
+      color: #1DB954;
+      border: 1px solid #1DB954;
+      border-radius: 4px;
+      padding: 5px 10px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.3s ease;
+    }
+    
+    .clear-log:hover {
+      background-color: #1DB954;
+      color: white;
+    }
+    
+    .log {
+      background-color: #000;
+      border-radius: 5px;
+      padding: 15px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: monospace;
+      white-space: pre-wrap;
+      color: #A9A9A9;
+    }
+    
+    .log-entry {
+      margin-bottom: 10px;
+      border-bottom: 1px solid #333;
+      padding-bottom: 10px;
+    }
+    
+    .log-command {
+      color: #1DB954;
+      font-weight: bold;
+    }
+    
+    .log-response {
+      color: #fff;
+    }
+    
+    .log-error {
+      color: #ff5252;
+    }
+    
+    .instructions {
+      background-color: #282828;
+      border-radius: 10px;
+      padding: 20px;
+      margin-top: 20px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .instructions h2 {
+      color: #1DB954;
+      margin-top: 0;
+    }
+    
+    .instructions ul {
+      padding-left: 20px;
+    }
+    
+    .instructions li {
+      margin-bottom: 8px;
+    }
+    
+    .settings {
+      background-color: #282828;
+      border-radius: 10px;
+      padding: 20px;
+      margin-top: 20px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      width: 100%;
+      box-sizing: border-box;
+    }
+    
+    .form-group {
+      margin-bottom: 15px;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 5px;
+      color: #1DB954;
+    }
+    
+    input[type="text"], 
+    input[type="url"] {
+      width: 100%;
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid #3E3E3E;
+      background-color: #121212;
+      color: white;
+      box-sizing: border-box;
+    }
+    
+    .save-settings {
+      background-color: #1DB954;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 8px 15px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.3s ease;
+    }
+    
+    .save-settings:hover {
+      background-color: #1ed760;
+    }
+    
+    .success {
+      color: #1DB954;
+    }
+    
+    .error {
+      color: #ff5252;
+    }
+    
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Claude Spotify Voice Control</h1>
+    
+    <div class="voice-control">
+      <div class="controls">
+        <button id="micButton" class="mic-button">
+          <i class="mic-icon">🎤</i>
+        </button>
+        <div id="status" class="status">Click the microphone to start listening</div>
+      </div>
+      
+      <div class="transcript">
+        <p id="transcriptText"></p>
+      </div>
+    </div>
+    
+    <div class="log-container">
+      <div class="log-title">
+        <h2>Command Log</h2>
+        <button id="clearLogButton" class="clear-log">Clear Log</button>
+      </div>
+      <div id="log" class="log"></div>
+    </div>
+    
+    <div class="settings">
+      <h2>Settings</h2>
+      <div class="form-group">
+        <label for="bridgeUrl">Bridge URL:</label>
+        <input type="url" id="bridgeUrl" placeholder="http://localhost:3001">
+      </div>
+      <div class="form-group">
+        <label for="triggerPhrase">Trigger Phrase:</label>
+        <input type="text" id="triggerPhrase" placeholder="claude">
+      </div>
+      <button id="saveSettingsButton" class="save-settings">Save Settings</button>
+      <p id="settingsStatus" class="hidden"></p>
+    </div>
+    
+    <div class="instructions">
+      <h2>How to use</h2>
+      <ol>
+        <li>Click the microphone button to start listening</li>
+        <li>Say a command starting with the trigger phrase (default: "Claude")</li>
+        <li>Examples:
+          <ul>
+            <li>"Claude, play Bohemian Rhapsody by Queen"</li>
+            <li>"Claude, pause the music"</li>
+            <li>"Claude, what song is playing right now?"</li>
+            <li>"Claude, turn up the volume"</li>
+          </ul>
+        </li>
+        <li>The command will be sent to the Spotify MCP server</li>
+        <li>Results will appear in the Command Log</li>
+      </ol>
+    </div>
+  </div>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Elements
+      const micButton = document.getElementById('micButton');
+      const statusElement = document.getElementById('status');
+      const transcriptText = document.getElementById('transcriptText');
+      const logElement = document.getElementById('log');
+      const clearLogButton = document.getElementById('clearLogButton');
+      const bridgeUrlInput = document.getElementById('bridgeUrl');
+      const triggerPhraseInput = document.getElementById('triggerPhrase');
+      const saveSettingsButton = document.getElementById('saveSettingsButton');
+      const settingsStatusElement = document.getElementById('settingsStatus');
+      
+      // Settings
+      let bridgeUrl = localStorage.getItem('bridgeUrl') || 'http://localhost:3001';
+      let triggerPhrase = localStorage.getItem('triggerPhrase') || 'claude';
+      
+      // Load settings
+      bridgeUrlInput.value = bridgeUrl;
+      triggerPhraseInput.value = triggerPhrase;
+      
+      // Speech recognition setup
+      let recognition;
+      let isListening = false;
+      
+      // Initialize speech recognition if available
+      function initSpeechRecognition() {
+        if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+          recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+          recognition.continuous = false;
+          recognition.interimResults = true;
+          recognition.lang = 'en-US';
+          
+          recognition.onstart = () => {
+            isListening = true;
+            statusElement.textContent = 'Listening...';
+            micButton.classList.add('listening');
+            transcriptText.textContent = '';
+          };
+          
+          recognition.onresult = (event) => {
+            const transcript = Array.from(event.results)
+              .map(result => result[0].transcript)
+              .join('');
+            
+            transcriptText.textContent = transcript;
+            
+            // Check for final result
+            if (event.results[0].isFinal) {
+              processVoiceCommand(transcript);
+            }
+          };
+          
+          recognition.onerror = (event) => {
+            console.error('Speech recognition error:', event.error);
+            statusElement.textContent = `Error: ${event.error}`;
+            stopListening();
+          };
+          
+          recognition.onend = () => {
+            stopListening();
+          };
+          
+          return true;
+        } else {
+          statusElement.textContent = 'Speech recognition not supported in this browser';
+          micButton.disabled = true;
+          return false;
+        }
+      }
+      
+      // Toggle listening
+      function toggleListening() {
+        if (!recognition) {
+          if (!initSpeechRecognition()) {
+            return;
+          }
+        }
+        
+        if (isListening) {
+          stopListening();
+        } else {
+          startListening();
+        }
+      }
+      
+      // Start listening
+      function startListening() {
+        try {
+          recognition.start();
+        } catch (err) {
+          console.error('Error starting recognition:', err);
+          stopListening();
+        }
+      }
+      
+      // Stop listening
+      function stopListening() {
+        if (isListening) {
+          try {
+            recognition.stop();
+          } catch (err) {
+            console.error('Error stopping recognition:', err);
+          }
+        }
+        
+        isListening = false;
+        statusElement.textContent = 'Click the microphone to start listening';
+        micButton.classList.remove('listening');
+      }
+      
+      // Process voice command
+      function processVoiceCommand(command) {
+        statusElement.textContent = 'Processing command...';
+        
+        // Check if command contains trigger phrase
+        if (!command.toLowerCase().includes(triggerPhrase.toLowerCase())) {
+          statusElement.textContent = 'Command did not include trigger phrase';
+          logCommand(command, { success: false, message: 'Missing trigger phrase' });
+          return;
+        }
+        
+        // Extract the command (remove trigger phrase)
+        const triggerIndex = command.toLowerCase().indexOf(triggerPhrase.toLowerCase());
+        const actualCommand = command.substring(triggerIndex + triggerPhrase.length).trim();
+        
+        if (!actualCommand) {
+          statusElement.textContent = 'No command detected after trigger phrase';
+          logCommand(command, { success: false, message: 'Empty command' });
+          return;
+        }
+        
+        // Send command to bridge
+        sendToBridge(actualCommand)
+          .then(response => {
+            statusElement.textContent = response.message || 'Command processed';
+            logCommand(actualCommand, response);
+          })
+          .catch(error => {
+            statusElement.textContent = `Error: ${error.message}`;
+            logCommand(actualCommand, { success: false, error: error.message });
+          });
+      }
+      
+      // Send command to bridge
+      async function sendToBridge(command) {
+        try {
+          const response = await fetch(`${bridgeUrl}/claude/command`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ command })
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to send command');
+          }
+          
+          return await response.json();
+        } catch (error) {
+          console.error('Error sending to bridge:', error);
+          throw error;
+        }
+      }
+      
+      // Log command and response
+      function logCommand(command, response) {
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = document.createElement('div');
+        logEntry.className = 'log-entry';
+        
+        const commandElement = document.createElement('div');
+        commandElement.className = 'log-command';
+        commandElement.textContent = `[${timestamp}] Command: ${command}`;
+        logEntry.appendChild(commandElement);
+        
+        const responseElement = document.createElement('div');
+        if (response.success) {
+          responseElement.className = 'log-response';
+          responseElement.textContent = `Response: ${response.message || 'Success'}`;
+          
+          if (response.details) {
+            const detailsElement = document.createElement('pre');
+            detailsElement.textContent = JSON.stringify(response.details, null, 2);
+            responseElement.appendChild(detailsElement);
+          }
+        } else {
+          responseElement.className = 'log-error';
+          responseElement.textContent = `Error: ${response.message || response.error || 'Unknown error'}`;
+        }
+        logEntry.appendChild(responseElement);
+        
+        logElement.insertBefore(logEntry, logElement.firstChild);
+      }
+      
+      // Save settings
+      function saveSettings() {
+        const newBridgeUrl = bridgeUrlInput.value.trim();
+        const newTriggerPhrase = triggerPhraseInput.value.trim();
+        
+        if (!newBridgeUrl) {
+          showSettingsStatus('Bridge URL cannot be empty', false);
+          return;
+        }
+        
+        if (!newTriggerPhrase) {
+          showSettingsStatus('Trigger phrase cannot be empty', false);
+          return;
+        }
+        
+        bridgeUrl = newBridgeUrl;
+        triggerPhrase = newTriggerPhrase;
+        
+        localStorage.setItem('bridgeUrl', bridgeUrl);
+        localStorage.setItem('triggerPhrase', triggerPhrase);
+        
+        showSettingsStatus('Settings saved', true);
+      }
+      
+      // Show settings status
+      function showSettingsStatus(message, isSuccess) {
+        settingsStatusElement.textContent = message;
+        settingsStatusElement.className = isSuccess ? 'success' : 'error';
+        settingsStatusElement.classList.remove('hidden');
+        
+        setTimeout(() => {
+          settingsStatusElement.classList.add('hidden');
+        }, 3000);
+      }
+      
+      // Clear log
+      function clearLog() {
+        logElement.innerHTML = '';
+      }
+      
+      // Event listeners
+      micButton.addEventListener('click', toggleListening);
+      clearLogButton.addEventListener('click', clearLog);
+      saveSettingsButton.addEventListener('click', saveSettings);
+      
+      // Initialize speech recognition
+      initSpeechRecognition();
+    });
+  </script>
+</body>
+</html>
