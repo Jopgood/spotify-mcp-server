@@ -10,6 +10,7 @@ A Media Control Protocol (MCP) server that provides a unified interface for cont
 - Get current playback information
 - RESTful API for easy integration with other applications
 - AI Assistant integration for controlling Spotify with natural language
+- Voice control interface for speaking commands to Spotify
 
 ## Prerequisites
 
@@ -39,13 +40,15 @@ A Media Control Protocol (MCP) server that provides a unified interface for cont
    PORT=8888
    SESSION_SECRET=your_random_session_secret
    AI_WEBHOOK_API_KEY=your_secure_api_key_for_ai_assistant
+   BRIDGE_PORT=3001
+   VOICE_PORT=3002
    ```
 
 4. Register a Spotify application at [Spotify Developer Dashboard](https://developer.spotify.com/dashboard/) and note your Client ID and Client Secret.
 
 ## Usage
 
-1. Start the server:
+1. Start the MCP server:
    ```
    npm start
    ```
@@ -132,50 +135,14 @@ This MCP server includes an AI webhook that allows AI assistants like Claude to 
    node bridge/claude-spotify-bridge.js
    ```
 
-3. The bridge will run on port 3000 by default. You can customize this by adding `BRIDGE_PORT=xxxx` to your `.env` file.
+3. The bridge will run on port 3001 by default. You can customize this by adding `BRIDGE_PORT=xxxx` to your `.env` file.
 
-### Exposing the Bridge to the Internet
+### Running Claude Spotify Commands
 
-For Claude to access your bridge, you need to expose it to the internet. You can use a service like ngrok:
+Use the provided client script to execute Claude's Spotify commands:
 
-1. Install ngrok: [https://ngrok.com/download](https://ngrok.com/download)
-
-2. Expose your bridge:
-   ```
-   ngrok http 3000
-   ```
-
-3. Note the HTTPS URL that ngrok provides (e.g., `https://abcd1234.ngrok.io`)
-
-### Connecting Claude to Your Spotify
-
-Claude can now control your Spotify through natural language commands by sending requests to the bridge. Create a simple endpoint or function that forwards Claude's commands to your bridge.
-
-Example implementation:
-
-```javascript
-async function controlSpotify(command) {
-  try {
-    const response = await fetch('https://your-ngrok-url/claude/command', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ command })
-    });
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error controlling Spotify:', error);
-    return { error: 'Failed to control Spotify' };
-  }
-}
-
-// Example usage:
-// controlSpotify("Play Bohemian Rhapsody by Queen");
-// controlSpotify("Pause the music");
-// controlSpotify("Skip to the next track");
-// controlSpotify("Set volume to 70%");
+```bash
+node client/claude-spotify-client.js "play bohemian rhapsody"
 ```
 
 ### Supported Natural Language Commands
@@ -192,6 +159,92 @@ The AI webhook supports commands like:
 - "Turn volume up"
 - "Turn volume down"
 - "What's currently playing?"
+
+## Voice Control
+
+For hands-free operation, you can use the voice control interface to speak commands to Spotify.
+
+### Setting up Voice Control
+
+1. Start the voice control server:
+   ```
+   node speech/voice-server.js
+   ```
+
+2. Open a browser and navigate to `http://localhost:3002` to access the voice control interface.
+
+3. Make sure the bridge service is running:
+   ```
+   node bridge/claude-spotify-bridge.js
+   ```
+
+4. Click the microphone button and speak your command, starting with "Claude" (e.g., "Claude, play some jazz music").
+
+### Browser Compatibility
+
+The voice control interface uses the Web Speech API, which is not supported in all browsers. For best results, use:
+- Google Chrome (recommended)
+- Microsoft Edge
+- Safari
+
+Firefox has limited support for the Web Speech API and may not work as expected.
+
+### Customizing the Voice Trigger
+
+You can change the trigger phrase from "Claude" to anything you prefer by:
+1. Going to the Settings section in the voice control interface
+2. Entering your preferred trigger phrase
+3. Clicking "Save Settings"
+
+Your preferences will be saved in your browser for future sessions.
+
+## Running Everything at Once
+
+To run the complete system (MCP server, bridge, and voice interface), you can:
+
+1. Start each component in separate terminal windows:
+   ```bash
+   # Terminal 1: Start MCP server
+   npm start
+   
+   # Terminal 2: Start Claude bridge
+   node bridge/claude-spotify-bridge.js
+   
+   # Terminal 3: Start voice interface
+   node speech/voice-server.js
+   ```
+
+2. Or create a simple start script to run everything at once:
+   ```javascript
+   // Create a file called start-all.js in the root directory with:
+   const { spawn } = require('child_process');
+   
+   const mcp = spawn('npm', ['start'], { stdio: 'inherit' });
+   setTimeout(() => {
+     const bridge = spawn('node', ['bridge/claude-spotify-bridge.js'], { stdio: 'inherit' });
+     const voice = spawn('node', ['speech/voice-server.js'], { stdio: 'inherit' });
+   }, 2000);
+   
+   // Usage: node start-all.js
+   ```
+
+## Troubleshooting
+
+- **"Port already in use" error**: 
+  - Change the port numbers in your `.env` file: `PORT`, `BRIDGE_PORT`, `VOICE_PORT`
+  
+- **Authentication issues**: 
+  - Make sure you've visited the web interface at `http://localhost:8888` and authenticated with Spotify
+  - Check that your Client ID and Secret are correct in `.env`
+  
+- **Voice control not working**:
+  - Ensure you're using a compatible browser (Chrome recommended)
+  - Check that your microphone is working and has the necessary permissions
+  - Verify the bridge URL in the voice interface settings matches your bridge server address
+
+- **"No active device" error**:
+  - Start playing something in Spotify on any device, then try again
+  - Spotify requires an active device to control playback
 
 ## Development
 
