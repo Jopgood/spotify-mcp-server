@@ -5,8 +5,13 @@ import session from 'express-session';
 import SpotifyWebApi from 'spotify-web-api-node';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import fs from 'fs/promises';
 import aiWebhook from './ai-webhook.js';
+import { 
+  saveTokenToStorage, 
+  loadTokenFromStorage, 
+  initializeTokenStorage,
+  isTokenExpired
+} from './token-manager.js';
 
 // Load environment variables
 dotenv.config();
@@ -18,7 +23,6 @@ const PORT = process.env.PORT || 8888;
 // Get the directory path
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const TOKEN_STORAGE_PATH = join(__dirname, '../.token-storage.json');
 
 // Middleware
 app.use(cors());
@@ -43,36 +47,6 @@ const spotifyApi = new SpotifyWebApi({
 app.get('/', (req, res) => {
   res.sendFile(join(__dirname, '../public/index.html'));
 });
-
-// Token storage functions
-async function saveTokenToStorage(tokenData) {
-  try {
-    await fs.writeFile(
-      TOKEN_STORAGE_PATH, 
-      JSON.stringify(tokenData), 
-      'utf8'
-    );
-    
-    // Also update environment variables for the AI webhook
-    process.env.SPOTIFY_ACCESS_TOKEN = tokenData.access_token;
-    process.env.SPOTIFY_REFRESH_TOKEN = tokenData.refresh_token;
-    process.env.SPOTIFY_TOKEN_EXPIRES_AT = tokenData.expires_at.toString();
-    
-    console.log('Token saved to storage');
-  } catch (error) {
-    console.error('Error saving token to storage:', error);
-  }
-}
-
-async function loadTokenFromStorage() {
-  try {
-    const data = await fs.readFile(TOKEN_STORAGE_PATH, 'utf8');
-    return JSON.parse(data);
-  } catch (error) {
-    console.error('Error loading token from storage:', error);
-    return null;
-  }
-}
 
 // Spotify authorization
 app.get('/login', (req, res) => {
@@ -283,20 +257,54 @@ app.get('/api/search', ensureAuthenticated, async (req, res) => {
 // Mount AI webhook router
 app.use('/ai', aiWebhook);
 
-// Load saved token on startup
+// Check token on server start and initialize the token storage
 (async () => {
   try {
+    // Initialize token storage (creates file if it doesn't exist)
+    await initializeTokenStorage();
+    
+    // Load saved token
     const savedToken = await loadTokenFromStorage();
-    if (savedToken) {
+    if (savedToken && savedToken.access_token) {
       console.log('Loaded saved token from storage');
       
       // Set environment variables for the AI webhook
       process.env.SPOTIFY_ACCESS_TOKEN = savedToken.access_token;
       process.env.SPOTIFY_REFRESH_TOKEN = savedToken.refresh_token;
       process.env.SPOTIFY_TOKEN_EXPIRES_AT = savedToken.expires_at.toString();
+      
+      // If token is expired, try to refresh it
+      if (isTokenExpired(savedToken) && savedToken.refresh_token) {
+        console.log('Saved token is expired, attempting to refresh...');
+        
+        try {
+          spotifyApi.setRefreshToken(savedToken.refresh_token);
+          const data = await spotifyApi.refreshAccessToken();
+          
+          // Save the new token
+          const newTokenData = {
+            access_token: data.body.access_token,
+            refresh_token: savedToken.refresh_token,
+            expires_at: Date.now() + data.body.expires_in * 1000
+          };
+          
+          await saveTokenToStorage(newTokenData);
+          console.log('Token refreshed successfully');
+          
+          // Update environment variables
+          process.env.SPOTIFY_ACCESS_TOKEN = newTokenData.access_token;
+          process.env.SPOTIFY_REFRESH_TOKEN = newTokenData.refresh_token;
+          process.env.SPOTIFY_TOKEN_EXPIRES_AT = newTokenData.expires_at.toString();
+        } catch (refreshError) {
+          console.error('Error refreshing token on startup:', refreshError);
+          console.log('You will need to re-authenticate');
+        }
+      }
+    } else {
+      console.log('No valid token found. You need to authenticate via the web interface first.');
     }
   } catch (error) {
-    console.error('Error loading saved token:', error);
+    console.error('Error during startup token check:', error);
   }
 })();
 
