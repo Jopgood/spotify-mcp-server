@@ -8,7 +8,7 @@ dotenv.config();
 
 // Initialize Express app
 const app = express();
-const PORT = process.env.BRIDGE_PORT || 3000;
+const PORT = process.env.BRIDGE_PORT || 3001; // Changed default port to 3001
 const MCP_SERVER_URL = process.env.MCP_SERVER_URL || 'http://localhost:8888';
 const API_KEY = process.env.AI_WEBHOOK_API_KEY;
 
